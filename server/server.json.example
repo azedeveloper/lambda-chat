@@ -1,0 +1,6 @@
+{
+    "ip": "localhost",
+    "port": 5000,
+    "max_clients": 10,
+    "authentication": "<yourauthkeyhere>"
+}

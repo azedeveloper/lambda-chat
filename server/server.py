@@ -2,10 +2,6 @@ import socket
 import threading
 import json
 
-HOST = '127.0.0.1'
-PORT = 5000
-MAX_CLIENTS = 10
-
 clients = []
 
 # ANSI color codes
@@ -15,15 +11,6 @@ GREEN = "\033[32m"
 BLUE = "\033[34m"
 YELLOW = "\033[33m"
 
-# Broadcast a message to all clients
-def broadcast(message, username, sender_socket):
-    payload = json.dumps({"username": username, "message": message})
-    for client in clients:
-        try:
-            client.send(payload.encode('utf-8'))
-        except:
-            remove(client)
-
 # Remove a client socket from the list of clients
 def remove(client_socket):
     if client_socket in clients:
@@ -31,7 +18,7 @@ def remove(client_socket):
         print(f"{RED}Client disconnected and removed{RESET}")
 
 # Handle individual client connections
-def handle_client(client_socket):
+def handle_client(client_socket, auth_key):
     try:
         while True:
             message = client_socket.recv(1024).decode('utf-8')
@@ -39,6 +26,7 @@ def handle_client(client_socket):
                 parsed_message = json.loads(message)
                 username = parsed_message.get("username", "Unknown")
                 content = parsed_message.get("message", "")
+
                 print(f"{BLUE}{username}: {content}{RESET}")
                 broadcast(content, username, client_socket)
             else:
@@ -49,8 +37,43 @@ def handle_client(client_socket):
         remove(client_socket)
         client_socket.close()
 
+# Broadcast a message to all clients
+def broadcast(message, username, sender_socket):
+    payload = json.dumps({"username": username, "message": message})
+    for client in clients:
+        try:
+            client.send(payload.encode('utf-8'))
+        except:
+            remove(client)
+
+# Authenticate the client on connection
+def authenticate_client(client_socket):
+    try:
+        auth_response = client_socket.recv(1024).decode('utf-8')
+        auth_data = json.loads(auth_response)
+        provided_key = auth_data.get("auth_key")
+
+        if provided_key == AUTH_KEY:
+            return True, auth_data.get("username", "Unknown")
+        else:
+            error_message = json.dumps({"username": "System", "message": "Authentication failed. Disconnecting..."}).encode('utf-8')
+            client_socket.send(error_message)
+            return False, None
+    except Exception as e:
+        print(f"{RED}Authentication error: {e}{RESET}")
+        return False, None
+
 # Start the server and listen for incoming connections
 def start_server():
+    with open('server.json', 'r') as file:
+        jsonData = json.load(file)
+
+    global AUTH_KEY
+    HOST = jsonData["ip"]
+    PORT = jsonData["port"]
+    MAX_CLIENTS = jsonData["max_clients"]
+    AUTH_KEY = jsonData["authentication"]
+
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((HOST, PORT))
     server.listen(MAX_CLIENTS)
@@ -58,10 +81,17 @@ def start_server():
 
     while True:
         client_socket, client_address = server.accept()
+        print(f"{BLUE}Client {client_address} connected{RESET}")
+
         if len(clients) < MAX_CLIENTS:
-            clients.append(client_socket)
-            print(f"{BLUE}Client {client_address} connected{RESET}")
-            threading.Thread(target=handle_client, args=(client_socket,)).start()
+            authenticated, username = authenticate_client(client_socket)
+            if authenticated:
+                clients.append(client_socket)
+                print(f"{GREEN}Authentication successful for {username}{RESET}")
+                threading.Thread(target=handle_client, args=(client_socket, AUTH_KEY)).start()
+            else:
+                print(f"{RED}Authentication failed for client at {client_address}{RESET}")
+                client_socket.close()
         else:
             client_socket.send(json.dumps({"username": "System", "message": "Server is full. Try again later."}).encode('utf-8'))
             client_socket.close()

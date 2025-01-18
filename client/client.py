@@ -4,7 +4,7 @@ import random
 import curses
 import json
 
-#Receive and parse incoming messages from the server
+# Receive and parse incoming messages from the server
 def receive_messages(client_socket, stdscr, messages):
     while True:
         try:
@@ -23,7 +23,7 @@ def receive_messages(client_socket, stdscr, messages):
             client_socket.close()
             break
 
-#Refresh the chat with new messages
+# Refresh the chat with new messages
 def refresh_chat(stdscr, messages):
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -50,7 +50,7 @@ def refresh_chat(stdscr, messages):
     stdscr.addstr(height - 1, 0, "> ")
     stdscr.refresh()
 
-#Rendering with curses and connecting to the server
+# Rendering with curses and connecting to the server
 def main(stdscr):
     curses.start_color()
     curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
@@ -64,20 +64,26 @@ def main(stdscr):
 
     host = jsonData['ip'] or "127.0.0.1"
     port = jsonData['port'] or 5000 
-    username = jsonData['username'] or f"client{random.randint(1, 1000)}"  
+    username = jsonData['username'] or f"client{random.randint(1, 1000)}"
+    auth_key = jsonData['authentication']
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((host, port))
 
+    # Send authentication
+    auth_payload = json.dumps({"auth_key": auth_key, "username": username})
+    client_socket.send(auth_payload.encode('utf-8'))
+
+
     ascii_art = (
-        "\u200B"  
+        "\u200B"
         """
     __   ___   __  ______  ___  ___     _______ _____ ______
    / /  / _ | /  |/  / _ )/ _ \/ _ |   / ___/ // / _ /_  __/
   / /__/ __ |/ /|_/ / _  / // / __ |  / /__/ _  / __ |/ /   
  /____/_/ |_/_/  /_/____/____/_/ |_|  \___/_//_/_/ |_/_/    
         """
-        "\u200B"  
+        "\u200B"
     )
 
     messages = [
@@ -102,7 +108,11 @@ def main(stdscr):
             if input_buffer.strip().lower() == "exit":
                 client_socket.close()
                 break
-            payload = json.dumps({"username": username, "message": input_buffer})
+            payload = json.dumps({
+                "auth_key": auth_key,
+                "username": username,
+                "message": input_buffer
+            })
             client_socket.send(payload.encode('utf-8'))
             input_buffer = ""
         elif key in (8, 127, curses.KEY_BACKSPACE):  

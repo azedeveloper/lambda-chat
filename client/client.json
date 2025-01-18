@@ -1,5 +1,6 @@
 {
     "ip": "localhost",
     "port": 5000,
-    "username": "Albin"
+    "username": "Albin",
+    "authentication": "skibid123"
 }
