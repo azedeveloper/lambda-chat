@@ -4,6 +4,7 @@ import random
 import curses
 import json
 
+#Receive and parse incoming messages from the server
 def receive_messages(client_socket, stdscr, messages):
     while True:
         try:
@@ -22,6 +23,7 @@ def receive_messages(client_socket, stdscr, messages):
             client_socket.close()
             break
 
+#Refresh the chat with new messages
 def refresh_chat(stdscr, messages):
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -48,6 +50,7 @@ def refresh_chat(stdscr, messages):
     stdscr.addstr(height - 1, 0, "> ")
     stdscr.refresh()
 
+#Rendering with curses and connecting to the server
 def main(stdscr):
     curses.start_color()
     curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
