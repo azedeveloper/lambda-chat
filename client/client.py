@@ -3,18 +3,27 @@ import threading
 import random
 import curses
 import json
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+
+shared_public_keys = {}
 
 # Receive and parse incoming messages from the server
 def receive_messages(client_socket, stdscr, messages):
     while True:
         try:
-            message = client_socket.recv(1024).decode('utf-8')
+            message = client_socket.recv(2048).decode('utf-8')
             if message:
                 parsed_message = json.loads(message)
-                username = parsed_message.get("username", "Unknown")
-                content = parsed_message.get("message", "")
-                messages.append((username, content))
-                refresh_chat(stdscr, messages)
+                if(parsed_message.get("message")):
+                    username = parsed_message.get("username", "Unknown")
+                    content = parsed_message.get("message", "")
+                    messages.append((username, content))
+                    refresh_chat(stdscr, messages)
+                elif(parsed_message.get("public_key")):
+                    username = parsed_message.get("username", "Unknown")
+                    content =  parsed_message.get("public_key")    
+                    shared_public_keys[username] = content
             else:
                 break
         except Exception as e:
@@ -67,11 +76,26 @@ def main(stdscr):
     username = jsonData['username'] or f"client{random.randint(1, 1000)}"
     auth_key = jsonData['authentication']
 
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048
+    )
+
+    public_key = private_key.public_key()
+
+
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((host, port))
+    
+    public_key_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )   
+
+    public_key_str = public_key_pem.decode('utf-8') 
 
     # Send authentication
-    auth_payload = json.dumps({"auth_key": auth_key, "username": username})
+    auth_payload = json.dumps({"auth_key": auth_key, "public_key": public_key_str, "username": username})
     client_socket.send(auth_payload.encode('utf-8'))
 
 
@@ -94,6 +118,7 @@ def main(stdscr):
 
     threading.Thread(target=receive_messages, args=(client_socket, stdscr, messages), daemon=True).start()
 
+
     height, width = stdscr.getmaxyx()
     input_buffer = ""
 
@@ -105,7 +130,7 @@ def main(stdscr):
         if key == curses.KEY_RESIZE:
             height, width = stdscr.getmaxyx()
         elif key in (10, 13):  
-            if input_buffer.strip().lower() == "exit":
+            if input_buffer.strip().lower() == "/exit":
                 client_socket.close()
                 break
             payload = json.dumps({

@@ -49,9 +49,10 @@ def broadcast(message, username, sender_socket):
 # Authenticate the client on connection
 def authenticate_client(client_socket):
     try:
-        auth_response = client_socket.recv(1024).decode('utf-8')
+        auth_response = client_socket.recv(1024 + 2048).decode('utf-8')
         auth_data = json.loads(auth_response)
         provided_key = auth_data.get("auth_key")
+        distribute_public_key(auth_data.get("username"),auth_data.get("public_key"), client_socket)
 
         if provided_key == AUTH_KEY:
             return True, auth_data.get("username", "Unknown")
@@ -61,6 +62,14 @@ def authenticate_client(client_socket):
             return False, None
     except Exception as e:
         print(f"{RED}Authentication error: {e}{RESET}")
+        return False, None
+    
+def distribute_public_key(username, public_key, client_socket):
+    try:
+        send_key = json.dumps({"username": username, "public_key": public_key})
+        client_socket.send(send_key.encode('utf-8'))
+    except Exception as e:
+        print(f"{RED}Key error: {e}{RESET}")
         return False, None
 
 # Start the server and listen for incoming connections
