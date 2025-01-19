@@ -44,7 +44,9 @@ def refresh_chat(stdscr, messages):
     for username, message in messages:
         lines = message.split('\n')
         for line in lines:
-            wrapped_lines = [line[i:i + width - 1] for i in range(0, len(line), width - 1)]
+            # Adjusted to account for the username prefix and space
+            max_line_width = width - len(username) - 4  # -4 accounts for 'username: ' and extra space
+            wrapped_lines = [line[i:i + max_line_width] for i in range(0, len(line), max_line_width)]
             for wrapped_line in wrapped_lines:
                 chat_lines.append((username, wrapped_line))
 
@@ -54,6 +56,9 @@ def refresh_chat(stdscr, messages):
         elif username == "System": 
             stdscr.addstr(i, 0, f"{username}: ", curses.color_pair(5))
             stdscr.addstr(line, curses.color_pair(1))
+        elif not username:
+            stdscr.addstr(i, 0, " ")  
+            stdscr.addstr(line, curses.color_pair(5))
         else:
             stdscr.addstr(i, 0, f"{username}: ", curses.color_pair(2))
             stdscr.addstr(line, curses.color_pair(1))
@@ -61,6 +66,7 @@ def refresh_chat(stdscr, messages):
     stdscr.addstr(height - 1, 0, "".ljust(width - 1), curses.color_pair(4))
     stdscr.addstr(height - 1, 0, "> ")
     stdscr.refresh()
+
 
 # Rendering with curses and connecting to the server
 def main(stdscr):
@@ -105,16 +111,20 @@ def main(stdscr):
     ascii_art = (
         "\u200B"
         """
-    __   ___   __  ______  ___  ___     _______ _____ ______
-   / /  / _ | /  |/  / _ )/ _ \/ _ |   / ___/ // / _ /_  __/
-  / /__/ __ |/ /|_/ / _  / // / __ |  / /__/ _  / __ |/ /   
- /____/_/ |_/_/  /_/____/____/_/ |_|  \___/_//_/_/ |_/_/    
+===========================================================        
+   __   ___   __  ______  ___  ___     _______ _____ ______
+  / /  / _ | /  |/  / _ )/ _ \/ _ |   / ___/ // / _ /_  __/
+ / /__/ __ |/ /|_/ / _  / // / __ |  / /__/ _  / __ |/ /   
+/____/_/ |_/_/  /_/____/____/_/ |_|  \___/_//_/_/ |_/_/    
+                                                           
+===========================================================
+
         """
         "\u200B"
     )
 
     messages = [
-        ("System", ascii_art.strip()),
+        ("", ascii_art.strip()),
         ("System", f"Connected to {host}:{port}"),
         ("System", f"You are: {username}")
     ]
