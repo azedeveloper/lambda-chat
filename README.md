@@ -12,7 +12,7 @@ A (soon-to-be) end-to-end encrypted chat client and server made in Python.
 
 - Install [Python](https://www.python.org/downloads/)
 - Clone the project: `git clone https://github.com/azedeveloper/lambda-chat.git/`
-- Install the curses library (if you're on windows): `pip install windows-curses`
+- If you're on windows, install the curses library: `pip install windows-curses`
 
 ## Running
 
