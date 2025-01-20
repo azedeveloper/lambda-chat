@@ -13,15 +13,17 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 BLUE = "\033[34m"
 YELLOW = "\033[33m"
+CYAN = "\x1b[96m"
+BOLD = "\u001b[1m"
 
 # Remove a client socket from the list of clients
-def remove(client_socket):
-    if client_socket in clients:
+def remove(client_socket, client_address, username):
+    if client_socket in clients:           
+        print(f"{RED}Client {BOLD}{username}{RESET}{RED} at {BOLD}{client_address}{RESET}{RED} disconnected and removed{RESET}")
         clients.remove(client_socket)
-        print(f"{RED}Client disconnected and removed{RESET}")
 
 # Handle individual client connections
-def handle_client(client_socket, auth_key):
+def handle_client(client_socket, auth_key, print_messages, client_address, username):
     try:
         while True:
             message = client_socket.recv(1024).decode('utf-8')
@@ -30,24 +32,26 @@ def handle_client(client_socket, auth_key):
                 username = parsed_message.get("username", "Unknown")
                 content = parsed_message.get("message", "")
 
-                print(f"{BLUE}{username}: {content}{RESET}")
-                broadcast(content, username, client_socket)
+                if(print_messages): print(f"{CYAN}{username}: {RESET}{content}")
+                broadcast(content, username, client_socket, client_address)
             else:
                 break
     except Exception as e:
+        if (e.errno == 10054):
+            return
         print(f"{RED}Error: {e}{RESET}")
     finally:
-        remove(client_socket)
+        remove(client_socket, client_address, username)
         client_socket.close()
 
 # Broadcast a message to all clients
-def broadcast(message, username, sender_socket):
+def broadcast(message, username, sender_socket, client_address):
     payload = json.dumps({"username": username, "message": message})
     for client in clients:
         try:
             client.send(payload.encode('utf-8'))
         except:
-            remove(client)
+            remove(client, client_address, username)
 
 # Authenticate the client on connection
 def authenticate_client(client_socket):
@@ -84,25 +88,25 @@ def start_server():
     HOST = jsonData["ip"]
     PORT = jsonData["port"]
     MAX_CLIENTS = jsonData["max_clients"]
+    PRINT_MESSAGES = jsonData["print_messages"]
     AUTH_KEY = jsonData["authentication"]
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((HOST, PORT))
     server.listen(MAX_CLIENTS)
-    print(f"{GREEN}Server started on {HOST}:{PORT}{RESET}")
+    print(f"{GREEN}Server started on {BOLD}{HOST}:{PORT}{RESET}")
 
     while True:
         client_socket, client_address = server.accept()
-        print(f"{BLUE}Client {client_address} connected{RESET}")
 
         if len(clients) < MAX_CLIENTS:
             authenticated, username = authenticate_client(client_socket)
             if authenticated:
                 clients.append(client_socket)
-                print(f"{GREEN}Authentication successful for {username}{RESET}")
-                threading.Thread(target=handle_client, args=(client_socket, AUTH_KEY)).start()
+                print(f"{BLUE}Client {BOLD}{username}{RESET}{BLUE} at {BOLD}{client_address}{RESET}{BLUE} connected and authenticated!{RESET}")
+                threading.Thread(target=handle_client, args=(client_socket, AUTH_KEY, PRINT_MESSAGES, client_address, username)).start()
             else:
-                print(f"{RED}Authentication failed for client at {client_address}{RESET}")
+                print(f"{RED}Authentication failed for client {BOLD}{username}{RESET}{RED} at {BOLD}{client_address}{RESET}")
                 client_socket.close()
         else:
             client_socket.send(json.dumps({"username": "System", "message": "Server is full. Try again later."}).encode('utf-8'))
