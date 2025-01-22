@@ -4,8 +4,11 @@
 import socket
 import threading
 import json
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization, hashes
 
 clients = []
+client_info = {}  # Store client information including username and public key
 
 # ANSI color codes
 RESET = "\033[0m"
@@ -21,37 +24,67 @@ def remove(client_socket, client_address, username):
     if client_socket in clients:           
         print(f"{RED}Client {BOLD}{username}{RESET}{RED} at {BOLD}{client_address}{RESET}{RED} disconnected and removed{RESET}")
         clients.remove(client_socket)
+        del client_info[client_socket]
+        broadcast_online_users()
 
 # Handle individual client connections
 def handle_client(client_socket, auth_key, print_messages, client_address, username):
     try:
         while True:
-            message = client_socket.recv(1024).decode('utf-8')
+            message = client_socket.recv(2048).decode('utf-8')
             if message:
                 parsed_message = json.loads(message)
                 username = parsed_message.get("username", "Unknown")
                 content = parsed_message.get("message", "")
+                recipient = parsed_message.get("recipient", None)
 
-                if(print_messages): print(f"{CYAN}{username}: {RESET}{content}")
-                broadcast(content, username, client_socket, client_address)
+                if content.lower() == "/online":
+                    send_online_users(client_socket)
+                else:
+                    if recipient:
+                        recipient_socket = next((sock for sock, info in client_info.items() if info["username"] == recipient), None)
+                        if recipient_socket:
+                            decrypted_message = decrypt_message(content, client_info[recipient_socket]["private_key"])
+                            if print_messages: print(f"{CYAN}{username} to {recipient}: {RESET}{decrypted_message}")
+                            broadcast(decrypted_message, username, client_socket, client_address, recipient_socket)
+                    else:
+                        if print_messages: print(f"{CYAN}{username}: {RESET}{content}")
+                        broadcast(content, username, client_socket, client_address)
             else:
                 break
     except Exception as e:
-        if (e.errno == 10054):
+        if e.errno == 10054:
             return
         print(f"{RED}Error: {e}{RESET}")
     finally:
         remove(client_socket, client_address, username)
         client_socket.close()
 
+def decrypt_message(encrypted_message, private_key_pem):
+    private_key = serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
+    return private_key.decrypt(
+        bytes.fromhex(encrypted_message),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    ).decode('utf-8')
+
 # Broadcast a message to all clients
-def broadcast(message, username, sender_socket, client_address):
+def broadcast(message, username, sender_socket, client_address, recipient_socket=None):
     payload = json.dumps({"username": username, "message": message})
-    for client in clients:
+    if recipient_socket:
         try:
-            client.send(payload.encode('utf-8'))
+            recipient_socket.send(payload.encode('utf-8'))
         except:
-            remove(client, client_address, username)
+            remove(recipient_socket, client_address, username)
+    else:
+        for client in clients:
+            try:
+                client.send(payload.encode('utf-8'))
+            except:
+                remove(client, client_address, username)
 
 # Authenticate the client on connection
 def authenticate_client(client_socket):
@@ -59,7 +92,7 @@ def authenticate_client(client_socket):
         auth_response = client_socket.recv(1024 + 2048).decode('utf-8')
         auth_data = json.loads(auth_response)
         provided_key = auth_data.get("auth_key")
-        distribute_public_key(auth_data.get("username"),auth_data.get("public_key"), client_socket)
+        distribute_public_key(auth_data.get("username"), auth_data.get("public_key"), auth_data.get("private_key"), client_socket)
 
         if provided_key == AUTH_KEY:
             return True, auth_data.get("username", "Unknown")
@@ -71,13 +104,31 @@ def authenticate_client(client_socket):
         print(f"{RED}Authentication error: {e}{RESET}")
         return False, None
     
-def distribute_public_key(username, public_key, client_socket):
-    try:
-        send_key = json.dumps({"username": username, "public_key": public_key})
-        client_socket.send(send_key.encode('utf-8'))
-    except Exception as e:
-        print(f"{RED}Key error: {e}{RESET}")
-        return False, None
+def distribute_public_key(username, public_key, private_key, client_socket):
+    client_info[client_socket] = {"username": username, "public_key": public_key, "private_key": private_key}
+    broadcast_public_keys()
+
+def broadcast_public_keys():
+    payload = json.dumps({"type": "public_keys", "data": {info["username"]: info["public_key"] for info in client_info.values()}})
+    for client in clients:
+        try:
+            client.send(payload.encode('utf-8'))
+        except:
+            remove(client, client_info[client]["address"], client_info[client]["username"])
+
+def send_online_users(client_socket):
+    online_users = [info["username"] for info in client_info.values()]
+    payload = json.dumps({"type": "online_users", "data": online_users})
+    client_socket.send(payload.encode('utf-8'))
+
+def broadcast_online_users():
+    online_users = [info["username"] for info in client_info.values()]
+    payload = json.dumps({"type": "online_users", "data": online_users})
+    for client in clients:
+        try:
+            client.send(payload.encode('utf-8'))
+        except:
+            remove(client, client_info[client]["address"], client_info[client]["username"])
 
 # Start the server and listen for incoming connections
 def start_server():

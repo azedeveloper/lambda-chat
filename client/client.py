@@ -6,10 +6,23 @@ import threading
 import random
 import curses
 import json
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
 
 shared_public_keys = {}
+online_users = []
+
+#encrypt messages with a recieved public key
+def encrypt_message(message, public_key):
+    public_key = serialization.load_pem_public_key(public_key.encode('utf-8'))
+    return public_key.encrypt(
+        message.encode('utf-8'),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
 
 # Receive and parse incoming messages from the server
 def receive_messages(client_socket, stdscr, messages):
@@ -23,10 +36,13 @@ def receive_messages(client_socket, stdscr, messages):
                     content = parsed_message.get("message", "")
                     messages.append((username, content))
                     refresh_chat(stdscr, messages)
-                elif(parsed_message.get("public_key")):
-                    username = parsed_message.get("username", "Unknown")
-                    content =  parsed_message.get("public_key")    
-                    shared_public_keys[username] = content
+                elif parsed_message.get("type") == "public_keys":
+                    shared_public_keys.update(parsed_message.get("data", {}))
+                elif parsed_message.get("type") == "online_users":
+                    global online_users
+                    online_users = parsed_message.get("data", [])
+                    messages.append(("System", f"Online users: {', '.join(online_users)}"))
+                    refresh_chat(stdscr, messages)
             else:
                 break
         except Exception as e:
@@ -146,6 +162,10 @@ def main(stdscr):
             if input_buffer.strip().lower() == "/exit":
                 client_socket.close()
                 break
+            elif input_buffer.strip().lower() == "/online":
+                payload = json.dumps({"auth_key": auth_key, "type": "online_users"})
+                client_socket.send(payload.encode('utf-8'))
+
             payload = json.dumps({
                 "auth_key": auth_key,
                 "username": username,
